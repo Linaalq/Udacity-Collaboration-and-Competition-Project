@@ -11,11 +11,13 @@ import torch.optim as optim
 
 BUFFER_SIZE = int(1e5)  # replay buffer size
 BATCH_SIZE = 256        # minibatch size
-GAMMA = 0.99            # discount factor
-TAU = 1e-3              # for soft update of target parameters
-LR_ACTOR = 1e-4         # learning rate of the actor 
-LR_CRITIC = 1e-4   #3     # learning rate of the critic
+GAMMA = 0.995            # discount factor
+TAU = 3e-1              # for soft update of target parameters
+LR_ACTOR = 1e-3         # learning rate of the actor 
+LR_CRITIC = 1e-3        # learning rate of the critic
 WEIGHT_DECAY = 0        # L2 weight decay
+LEARN_EVERY = 4         # learn every LEARN_EVERY steps
+LEARN_NB = 3            # how often to execute the learn-function every LEARN_EVERY steps
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -35,6 +37,7 @@ class Agent():
         self.action_size = action_size
         self.seed = random.seed(random_seed)
         self.num_agents = num_agents
+        self.i_learn = 0  # for learning every n steps
 
         # Actor Network (w/ Target Network)
         self.actor_local = Actor(state_size, action_size, random_seed).to(device)
@@ -58,12 +61,14 @@ class Agent():
         for i in range(self.num_agents):
             self.memory.add(state[i], action[i], reward[i], next_state[i], done[i])
 
-        # Learn, if enough samples are available in memory
-        if len(self.memory) > BATCH_SIZE:
-            experiences = self.memory.sample()
-            self.learn(experiences, GAMMA)
+        self.i_learn = (self.i_learn + 1) % LEARN_EVERY
+        # Learn every LEARN_EVERY steps if enough samples are available in memory
+        if len(self.memory) > BATCH_SIZE and self.i_learn == 0:
+            for _ in range(LEARN_NB):
+                experiences = self.memory.sample()
+                self.learn(experiences, GAMMA)
 
-    def act(self, states, add_noise=True):
+    def act(self, states, add_noise=True, noise_factor=1.0):
         """Returns actions for given state as per current policy."""
         states = torch.from_numpy(states).float().to(device)
         #actions = []
@@ -76,7 +81,7 @@ class Agent():
                 #actions.append(action)
         self.actor_local.train()
         if add_noise:
-            action += self.noise.sample()
+            action += noise_factor * self.noise.sample().reshape((-1, 2))
         return np.clip(action, -1, 1)
 
     def reset(self):
